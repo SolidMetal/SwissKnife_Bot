@@ -1,0 +1,221 @@
+import os
+import json
+import jpg2pdf
+import logging
+import numpy as np
+import random as r
+import requests
+import telebot
+from telebot import types
+from PIL import Image
+from bot_constants import TOKEN
+from bot_constants import API
+bot = telebot.TeleBot(TOKEN)
+
+# logger = telebot.logger
+# telebot.logger.setLevel(logging.DEBUG)
+
+# Приветствие и создание кнопок
+@bot.message_handler(commands=["start"])
+def start(message):
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn1 = types.InlineKeyboardButton("Узнать погоду", callback_data="weather")
+    btn2 = types.InlineKeyboardButton("Бросить монетку", callback_data="flip")
+    btn3 = types.InlineKeyboardButton("Случайное число", callback_data="roll")
+    btn4 = types.InlineKeyboardButton(
+        "Обработка картинок", callback_data="image_processing")
+    markup.add(btn1, btn2, btn3, btn4)
+    bot.send_message(
+        message.chat.id, f"Что я могу для тебя сделать?", reply_markup=markup)
+
+# Обработка нажатия на кнопку
+@bot.callback_query_handler(func=lambda call: True)
+def callback(call):
+    if call.data == "weather":
+        bot.send_message(call.message.chat.id,
+                         "В каком городе ты хочешь узнать погоду?")
+        bot.register_next_step_handler(call.message, get_weather)
+
+    elif call.data == "flip":
+        flip(call.message)
+
+    elif call.data == "roll":
+        bot.send_message(
+            call.message.chat.id, "Введи верхний предел для генератора случайных чисел (целое положительное число)")
+        bot.register_next_step_handler(call.message, roll)
+
+    elif call.data == "image_processing":
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        btn1 = types.InlineKeyboardButton(
+            "Сделать негатив", callback_data="negative")
+        btn2 = types.InlineKeyboardButton(
+            "Перевести в формат PDF", callback_data="pdf")
+        btn3 = types.InlineKeyboardButton("Назад в меню", callback_data="menu")
+        markup.add(btn1, btn2, btn3)
+        bot.send_message(
+            call.message.chat.id, f"Как ты хочешь обработать это изображение?", reply_markup=markup)
+
+    elif call.data == "pdf":
+        bot.send_message(call.message.chat.id,
+                         "Отправь мне изображение для конвертации")
+        bot.register_next_step_handler(call.message, pdf)
+
+    elif call.data == "negative":
+        bot.send_message(
+            call.message.chat.id, "Отправь мне изображение, негатив которого ты хочешь получить")
+        bot.register_next_step_handler(call.message, negative)
+
+    elif call.data == "menu":
+        start(call.message)
+
+
+def get_weather(message):
+    city = message.text.strip().lower()
+    res = requests.get(
+        f'https://api.openweathermap.org/data/2.5/forecast?q={city}&lang=ru&appid={API}&units=metric')
+
+    if res.status_code == 200:  # Обработка ошибки в названии города
+        data = json.loads(res.text)
+        condition = data["list"][0]["weather"][0]["description"]
+        temperature = data["list"][0]["main"]["temp"]
+        pressure = data["list"][0]["main"]["pressure"] * 0.7500617
+        feels_like = data["list"][0]["main"]["feels_like"]
+        humidity = data["list"][0]["main"]["humidity"]
+
+        # data["list"][0] - данные по погоде на момент запроса
+        # data["list"][8] - через сутки
+        # data["list"][16] - через двое суток
+
+        now_time = data["list"][0]["dt_txt"]
+        temp1day = data["list"][8]["main"]["temp"]
+        temp2days = data["list"][16]["main"]["temp"]
+
+        forecast = (f'Данные по городу {city.capitalize()} на {now_time}:\n'
+                    f'За окном {condition};\n'
+                    f'Температура воздуха: {temperature:.1f}°C;\n'
+                    f'Ощущается как: {feels_like:.1f}°C; \n'
+                    f'Атмосферное давление: {pressure:.0f} мм.рт.ст.; \n'
+                    f'Влажность: {humidity} %.\n\n'
+
+                    f'Завтра в это же время: {temp1day:.1f}°C;\n'
+                    f'Послезавтра в это же время: {temp2days:.1f}°C;\n')
+
+        # Выбор изображения по погоде
+        if condition == "ясно":
+            path = "c:/Users/Пользователь/Desktop/TGBot/sunny/"
+        elif condition == "пасмурно":
+            path = "c:/Users/Пользователь/Desktop/TGBot/dark/"
+        elif "туман" in condition:
+            path = "c:/Users/Пользователь/Desktop/TGBot/foggy/"
+        elif "дождь" in condition:
+            path = "c:/Users/Пользователь/Desktop/TGBot/rainy/"
+        elif "облачно" in condition:
+            path = "c:/Users/Пользователь/Desktop/TGBot/cloudy/"
+        elif "снег" in condition:
+            path = "c:/Users/Пользователь/Desktop/TGBot/snowy/"
+
+        img_list = os.listdir(path)
+        img_path = r.choice(img_list)
+        img_path = path + img_path
+        photo = open(img_path, 'rb')
+
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        btn1 = types.InlineKeyboardButton(
+            "Новый запрос", callback_data="weather")
+        btn2 = types.InlineKeyboardButton("Назад в меню", callback_data="menu")
+        markup.add(btn1, btn2)
+        bot.send_photo(message.chat.id, photo,
+                       caption=forecast, reply_markup=markup)
+
+    else:
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        btn1 = types.InlineKeyboardButton(
+            "Новый запрос", callback_data="weather")
+        btn2 = types.InlineKeyboardButton("Назад в меню", callback_data="menu")
+        markup.add(btn1, btn2)
+        bot.send_message(
+            message.chat.id, "Город указан неверно!", reply_markup=markup)
+
+
+def flip(message):
+    result = r.choice(["Орёл", "Решка"])
+    flip_message = f'{result}!'
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    btn1 = types.InlineKeyboardButton("Ещё раз!", callback_data="flip")
+    btn2 = types.InlineKeyboardButton("Назад в меню", callback_data="menu")
+    markup.add(btn1, btn2)
+    bot.send_message(message.chat.id, flip_message, reply_markup=markup)
+
+
+def roll(message):
+    try:
+        high = int(message.text)
+        result = r.randint(1, high)
+
+    except ValueError:
+        bot.send_message(
+            message.chat.id, f'Ошибка! Необходимо ввести целое положительное число, попробуй ещё раз')
+        bot.register_next_step_handler(message, roll)
+        return
+    except TypeError:
+        bot.send_message(
+            message.chat.id, f'Ошибка! Данный объект не является числом, попробуй ещё раз')
+        bot.register_next_step_handler(message, roll)
+        return
+
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    btn1 = types.InlineKeyboardButton("Ещё раз!", callback_data="roll")
+    btn2 = types.InlineKeyboardButton("Назад в меню", callback_data="menu")
+    markup.add(btn1, btn2)
+    bot.send_message(
+        message.chat.id, f'Случайное число от нуля до {high}: {result}', reply_markup=markup)
+
+
+def pdf(message):
+    fileID = message.photo[-1].file_id
+    file_info = bot.get_file(fileID)
+    print('file.file_path =', file_info.file_path)
+    downloaded_file = bot.download_file(file_info.file_path)
+
+    with open("image.jpg", 'wb') as new_file:
+        new_file.write(downloaded_file)
+
+    with jpg2pdf.create("doc.pdf") as pdf:
+        pdf.add('image.jpg')
+
+    doc = open("doc.pdf", "rb")
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    btn1 = types.InlineKeyboardButton(
+        "Конвертировать ещё одно изображение", callback_data="pdf")
+    btn2 = types.InlineKeyboardButton("Назад в меню", callback_data="menu")
+    markup.add(btn1, btn2)
+    bot.send_document(message.chat.id, doc, reply_markup=markup)
+
+
+def negative(message):
+    fileID = message.photo[-1].file_id
+    file_info = bot.get_file(fileID)
+    print('file.file_path =', file_info.file_path)
+    downloaded_file = bot.download_file(file_info.file_path)
+
+    with open("image.jpg", 'wb') as new_file:
+        new_file.write(downloaded_file)
+
+    img = Image.open("image.jpg")
+    img = np.array(img)
+    np.save("img.npy", img)
+    img = np.load("img.npy")
+    img1 = img.copy()
+    img1 = 255 - img1
+    data = Image.fromarray(img1)
+    data.save("neg_image.jpg")
+    photo = open("neg_image.jpg", "rb")
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    btn1 = types.InlineKeyboardButton(
+        "Обработать ещё одно изображение", callback_data="negative")
+    btn2 = types.InlineKeyboardButton("Назад в меню", callback_data="menu")
+    markup.add(btn1, btn2)
+    bot.send_photo(message.chat.id, photo, reply_markup=markup)
+
+
+bot.infinity_polling()
