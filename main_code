@@ -1,13 +1,15 @@
 import os
+import datetime as dt
 import json
 import jpg2pdf
-import logging
+# import logging
 import numpy as np
 import random as r
 import requests
 import telebot
 from telebot import types
 from PIL import Image
+
 from bot_constants import TOKEN
 from bot_constants import API
 bot = telebot.TeleBot(TOKEN)
@@ -15,7 +17,7 @@ bot = telebot.TeleBot(TOKEN)
 # logger = telebot.logger
 # telebot.logger.setLevel(logging.DEBUG)
 
-# Приветствие и создание кнопок
+# Создание и вызов главного меню бота
 @bot.message_handler(commands=["start"])
 def start(message):
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -28,7 +30,7 @@ def start(message):
     bot.send_message(
         message.chat.id, f"Что я могу для тебя сделать?", reply_markup=markup)
 
-# Обработка нажатия на кнопку
+# Обработка нажатий на кнопки
 @bot.callback_query_handler(func=lambda call: True)
 def callback(call):
     if call.data == "weather":
@@ -50,8 +52,10 @@ def callback(call):
             "Сделать негатив", callback_data="negative")
         btn2 = types.InlineKeyboardButton(
             "Перевести в формат PDF", callback_data="pdf")
-        btn3 = types.InlineKeyboardButton("Назад в меню", callback_data="menu")
-        markup.add(btn1, btn2, btn3)
+        btn3 = types.InlineKeyboardButton(
+            "Перевести в формат PDF и сделать чёрно-белым", callback_data="black_and_white_pdf")
+        btn4 = types.InlineKeyboardButton("Назад в меню", callback_data="menu")
+        markup.add(btn1, btn2, btn3, btn4)
         bot.send_message(
             call.message.chat.id, f"Как ты хочешь обработать это изображение?", reply_markup=markup)
 
@@ -59,6 +63,11 @@ def callback(call):
         bot.send_message(call.message.chat.id,
                          "Отправь мне изображение для конвертации")
         bot.register_next_step_handler(call.message, pdf)
+
+    elif call.data == "black_and_white_pdf":
+        bot.send_message(call.message.chat.id,
+                         "Отправь мне изображение для конвертации")
+        bot.register_next_step_handler(call.message, black_and_white_pdf)
 
     elif call.data == "negative":
         bot.send_message(
@@ -68,37 +77,42 @@ def callback(call):
     elif call.data == "menu":
         start(call.message)
 
-
+# Прогноз погоды - выдаёт подробный прогноз на момент запроса, а также краткий на два дня вперёд
 def get_weather(message):
     city = message.text.strip().lower()
-    res = requests.get(
-        f'https://api.openweathermap.org/data/2.5/forecast?q={city}&lang=ru&appid={API}&units=metric')
 
-    if res.status_code == 200:  # Обработка ошибки в названии города
-        data = json.loads(res.text)
-        condition = data["list"][0]["weather"][0]["description"]
-        temperature = data["list"][0]["main"]["temp"]
-        pressure = data["list"][0]["main"]["pressure"] * 0.7500617
-        feels_like = data["list"][0]["main"]["feels_like"]
-        humidity = data["list"][0]["main"]["humidity"]
+    res_now = requests.get(
+        f'https://api.openweathermap.org/data/2.5/weather?q={city}&lang=ru&appid={API}&units=metric')  # Погода сейчас
+
+    res_5 = requests.get(
+        f'https://api.openweathermap.org/data/2.5/forecast?q={city}&lang=ru&appid={API}&units=metric')  # Прогноз
+
+    if res_now.status_code == 200:  # Обработка ошибки в названии города
+        data_now = json.loads(res_now.text)
+        data_5 = json.loads(res_5.text)
 
         # data["list"][0] - данные по погоде на момент запроса
         # data["list"][8] - через сутки
         # data["list"][16] - через двое суток
 
-        now_time = data["list"][0]["dt_txt"]
-        temp1day = data["list"][8]["main"]["temp"]
-        temp2days = data["list"][16]["main"]["temp"]
+        # Переводим время, полученное из API-запроса в читаемый формат из dt-формата
+        date_time_now = dt.datetime.fromtimestamp(
+            data_now["dt"]).isoformat(" ", "minutes")
+        # Обрезаем дату, оставляем только текущее время
+        time_now = date_time_now[date_time_now.find(" ")+1::]
+        temp1day = data_5["list"][8]["main"]["temp"]
+        temp2days = data_5["list"][16]["main"]["temp"]
 
-        forecast = (f'Данные по городу {city.capitalize()} на {now_time}:\n'
-                    f'За окном {condition};\n'
-                    f'Температура воздуха: {temperature:.1f}°C;\n'
-                    f'Ощущается как: {feels_like:.1f}°C; \n'
-                    f'Атмосферное давление: {pressure:.0f} мм.рт.ст.; \n'
-                    f'Влажность: {humidity} %.\n\n'
-
+        condition = data_now["weather"][0]["description"]  # Погодные условия
+        # Полный прогноз
+        forecast = (f'Данные по городу {city.capitalize()} на {time_now}:\n'
+                    f'Сейчас за окном {condition};\n'
+                    f'Температура воздуха: {data_now["main"]["temp"]:.1f}°C;\n'
+                    f'Ощущается как: {data_now["main"]["feels_like"]:.1f}°C; \n'
+                    f'Атмосферное давление: {(data_now["main"]["pressure"] * 0.7500617):.0f} мм.рт.ст.; \n'
+                    f'Влажность: {data_now["main"]["humidity"]} %;\n'
                     f'Завтра в это же время: {temp1day:.1f}°C;\n'
-                    f'Послезавтра в это же время: {temp2days:.1f}°C;\n')
+                    f'Послезавтра в это же время: {temp2days:.1f}°C\n')
 
         # Выбор изображения по погоде
         if condition == "ясно":
@@ -113,12 +127,14 @@ def get_weather(message):
             path = "c:/Users/Пользователь/Desktop/TGBot/cloudy/"
         elif "снег" in condition:
             path = "c:/Users/Пользователь/Desktop/TGBot/snowy/"
-
+        
+        # Случайный выбор изображения из соответствующей папки
         img_list = os.listdir(path)
         img_path = r.choice(img_list)
         img_path = path + img_path
         photo = open(img_path, 'rb')
 
+        
         markup = types.InlineKeyboardMarkup(row_width=1)
         btn1 = types.InlineKeyboardButton(
             "Новый запрос", callback_data="weather")
@@ -136,7 +152,7 @@ def get_weather(message):
         bot.send_message(
             message.chat.id, "Город указан неверно!", reply_markup=markup)
 
-
+# Бросок монетки - случайным образом выдаёт значение "Орёл" или "Решка"
 def flip(message):
     result = r.choice(["Орёл", "Решка"])
     flip_message = f'{result}!'
@@ -146,7 +162,7 @@ def flip(message):
     markup.add(btn1, btn2)
     bot.send_message(message.chat.id, flip_message, reply_markup=markup)
 
-
+# Генератор случайных чисел - выдаёт случайное число в диапазоне от нуля до значения, введённого пользователем
 def roll(message):
     try:
         high = int(message.text)
@@ -170,7 +186,7 @@ def roll(message):
     bot.send_message(
         message.chat.id, f'Случайное число от нуля до {high}: {result}', reply_markup=markup)
 
-
+# Преобразование картинки в формат PDF
 def pdf(message):
     fileID = message.photo[-1].file_id
     file_info = bot.get_file(fileID)
@@ -191,7 +207,30 @@ def pdf(message):
     markup.add(btn1, btn2)
     bot.send_document(message.chat.id, doc, reply_markup=markup)
 
+# Преобразование картинки в формат PDF, но чёрно-белый
+def black_and_white_pdf(message):
+    fileID = message.photo[-1].file_id
+    file_info = bot.get_file(fileID)
+    downloaded_file = bot.download_file(file_info.file_path)
 
+    with open("image.jpg", 'wb') as new_file:
+        new_file.write(downloaded_file)
+
+    img = Image.open('image.jpg').convert('L')
+    img.save('grayscale.jpg')
+
+    with jpg2pdf.create("doc_BW.pdf") as pdf:
+        pdf.add('grayscale.jpg')
+
+    doc = open("doc_BW.pdf", "rb")
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    btn1 = types.InlineKeyboardButton(
+        "Конвертировать ещё одно изображение", callback_data="pdf")
+    btn2 = types.InlineKeyboardButton("Назад в меню", callback_data="menu")
+    markup.add(btn1, btn2)
+    bot.send_document(message.chat.id, doc, reply_markup=markup)
+
+# Создание негатива изображения
 def negative(message):
     fileID = message.photo[-1].file_id
     file_info = bot.get_file(fileID)
