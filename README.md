@@ -6,6 +6,7 @@ A small yet helpful telegram bot. Features: weather forecast, RNG, image process
 
 
 **ЧТО УМЕЕТ ЭТОТ БОТ?**
+-----------------------
 
 ПРОГНОЗ ПОГОДЫ
 --------------
