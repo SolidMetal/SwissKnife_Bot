@@ -2,6 +2,8 @@
 A small yet helpful telegram bot. Features: weather forecast, RNG, image processing and coin flip. 
 Небольшой, но полезный телеграм бот. Основные функции: прогноз погоды, генератор случайных чисел, обработка изображений, бросок монетки :)
 
+****ЧТО УМЕЕТ ЭТОТ БОТ?****
+
 
 **ПРОГНОЗ ПОГОДЫ**
 
