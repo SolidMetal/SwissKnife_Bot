@@ -27,6 +27,6 @@ At the present moment there are three modes:
 
 COIN FLIP
 -------------- 
-Thats an simple one. Bot imitates a flip of the coin afrer you press the button and tells you if it is Heads or Tails.
+Thats a simple one. Bot imitates a flip of the coin afrer you press the button and tells you if it is Heads or Tails.
   
 
